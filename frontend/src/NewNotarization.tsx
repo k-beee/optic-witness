@@ -130,7 +130,7 @@ export function NewNotarization({
 
         {phase !== "idle" && (
           <div className="attestation-progress-steps">
-            <div className={`step-item ${phase !== "idle" ? "step-passed" : ""} ${phase === "submitting" ? "step-current" : ""}`}>
+            <div className={`step-item step-passed ${phase === "submitting" ? "step-current" : ""}`}>
               <span className="step-marker-dot" /> Submitting transaction receipt
             </div>
             <div className={`step-item ${phase === "consensus" || phase === "finalized" ? "step-passed" : ""} ${phase === "consensus" ? "step-current" : ""}`}>

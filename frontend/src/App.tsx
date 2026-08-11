@@ -4,7 +4,6 @@ import {
   PRIVY_APP_ID,
   CONTRACT_ADDRESS,
   EXPLORER_BASE,
-  FAUCET_URL,
 } from "./config";
 import {
   readAttestationFee,
@@ -17,7 +16,7 @@ import { formatBalance, parseExceptionMessage, formatAddress } from "./lib/forma
 import { MetricStatCard, WitnessLedger, WitnessDetail } from "./components";
 import { NewNotarization } from "./NewNotarization";
 import { WalletButton, useWallet } from "./wallet";
-import { IconEye, IconScale, IconClock, IconGlobe, IconTerminal, IconServer, IconLock } from "./icons";
+import { IconEye, IconScale, IconGlobe, IconTerminal, IconServer, IconLock } from "./icons";
 
 const REPOSITORY_LINK = "https://github.com/k_bee/optic-witness";
 const TWITTER_LINK = "https://x.com/k_bee";
