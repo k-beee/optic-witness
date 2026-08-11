@@ -132,3 +132,106 @@ def test_malformed_boolean_reverts(direct_vm, direct_deploy, direct_alice):
     direct_vm.value = INITIAL_FEE
     with direct_vm.expect_revert("claim_present must be boolean"):
         contract.request_attestation("https://example.com", "Does it show 10M?")
+
+
+# --- Validator Equivalence & Consensus ---------------------------------------
+def test_validator_agrees_on_matching_outcome(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    contract.request_attestation("https://example.com", "Does it show audit?")
+    assert direct_vm.run_validator() is True
+
+
+def test_validator_disagrees_on_verdict_mismatch(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    contract.request_attestation("https://example.com", "Does it show audit?")
+    
+    # Validator sees the claim is false
+    direct_vm.clear_mocks()
+    _setup_mocks(
+        direct_vm,
+        response_json=json.dumps(
+            {
+                "claim_present": False,
+                "exact_text": "",
+                "confidence": "low",
+                "caveats": "",
+            }
+        ),
+    )
+    assert direct_vm.run_validator() is False
+
+
+def test_validator_agrees_on_varying_screenshot_hashes(direct_vm, direct_deploy, direct_alice):
+    """
+    OpticWitness enhancement test: Validators do not compare screenshot hashes.
+    Since web mock assets can vary, this test verifies validator consensus matches 
+    even if screenshot files/hashes are configured differently on validator nodes.
+    """
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    contract.request_attestation("https://example.com", "Does it show audit?")
+    
+    # Change web mock response to change screenshot hash for validator run
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*", {"status": 200, "body": "<html>different layout / dynamic ad</html>"})
+    direct_vm.mock_llm(r".*screenshot.*", MOCK_OUTCOME_JSON)
+    # Consensus should still pass because screenshot hash checking is skipped
+    assert direct_vm.run_validator() is True
+
+
+def test_validator_disagrees_on_text_mismatch(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    contract.request_attestation("https://example.com", "Does it show audit?")
+    
+    # Validator sees different supporting text
+    direct_vm.clear_mocks()
+    _setup_mocks(
+        direct_vm,
+        response_json=json.dumps(
+            {
+                "claim_present": True,
+                "exact_text": "Audit verified on 2026-09-09 by LexForge",
+                "confidence": "high",
+                "caveats": "",
+            }
+        ),
+    )
+    assert direct_vm.run_validator() is False
+
+
+def test_validator_agrees_on_text_formatting_variance(direct_vm, direct_deploy, direct_alice):
+    """
+    OpticWitness normalizes extracted_text to alphanumeric lowercase to prevent
+    consensus splits over whitespaces, punctuation, or casing.
+    """
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    contract.request_attestation("https://example.com", "Does it show audit?")
+    
+    # Validator returns same alphanumeric sequence but formatted differently
+    direct_vm.clear_mocks()
+    _setup_mocks(
+        direct_vm,
+        response_json=json.dumps(
+            {
+                "claim_present": True,
+                "exact_text": "AUDITED BY LexForge on 2026_08_01!!",
+                "confidence": "high",
+                "caveats": "",
+            }
+        ),
+    )
+    assert direct_vm.run_validator() is True
