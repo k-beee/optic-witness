@@ -52,7 +52,9 @@ async function ensureStudioNet(provider: Eip1193Provider): Promise<void> {
             chainName: studioNet.name,
             nativeCurrency: studioNet.nativeCurrency,
             rpcUrls: studioNet.rpcUrls.default.http,
-            blockExplorerUrls: [studioNet.blockExplorers.default.url],
+            blockExplorerUrls: studioNet.blockExplorers
+              ? [studioNet.blockExplorers.default.url]
+              : [],
           },
         ],
       });
