@@ -99,7 +99,7 @@ def test_strict_boolean_string_parsing(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
     _setup_mocks(
         direct_vm,
-        llm_json=json.dumps(
+        response_json=json.dumps(
             {
                 "claim_present": "no",
                 "exact_text": "",
@@ -119,7 +119,7 @@ def test_malformed_boolean_reverts(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
     _setup_mocks(
         direct_vm,
-        llm_json=json.dumps(
+        response_json=json.dumps(
             {
                 "claim_present": "unclear",
                 "exact_text": "",
@@ -244,15 +244,16 @@ def test_cooldown_enforcement(direct_vm, direct_deploy, direct_alice):
     direct_vm.sender = direct_alice
     direct_vm.value = INITIAL_FEE
     
+    from genlayer import gl
     # 1st request at 16:00:00
-    direct_vm.message_raw = {"datetime": "2026-08-11T16:00:00Z"}
+    gl.message_raw["datetime"] = "2026-08-11T16:00:00Z"
     contract.request_attestation("https://example.com", "Question?")
     
     # 2nd request at 16:00:30 (should revert due to 60s cooldown)
-    direct_vm.message_raw = {"datetime": "2026-08-11T16:00:30Z"}
+    gl.message_raw["datetime"] = "2026-08-11T16:00:30Z"
     with direct_vm.expect_revert("Cooldown active"):
         contract.request_attestation("https://example.com", "Question?")
         
     # 3rd request at 16:01:05 (should succeed because it is > 60s later)
-    direct_vm.message_raw = {"datetime": "2026-08-11T16:01:05Z"}
+    gl.message_raw["datetime"] = "2026-08-11T16:01:05Z"
     contract.request_attestation("https://example.com", "Question?")
