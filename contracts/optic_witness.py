@@ -109,7 +109,39 @@ class OpticWitness(gl.Contract):
         def leader_fn() -> dict:
             return _evaluate(url, prompt)
 
-        # Skeletons for validator and settlement will be defined in subsequent commits.
+        def validator_fn(leaders_res: gl.vm.Result) -> bool:
+            # Handle error execution paths
+            if not isinstance(leaders_res, gl.vm.Return):
+                return _compare_errors(leaders_res, lambda: _evaluate(url, prompt))
+
+            # Retrieve leader outcome data
+            leader_data = leaders_res.calldata
+            my = _evaluate(url, prompt)
+
+            # Consensus check 1: verdict match (must match exactly)
+            if bool(my["claim_present"]) != bool(leader_data["claim_present"]):
+                return False
+
+            # Consensus check 2: semantic supporting text match (normalized lowercase comparison)
+            # This avoids brittle splits due to trivial formatting shifts (punctuation, whitespaces)
+            if _normalize(my.get("exact_text", "")) != _normalize(leader_data.get("exact_text", "")):
+                return False
+
+            # Consensus check 3: confidence matching (leader high requires validator high/medium)
+            if leader_data["confidence"] == "high" and my["confidence"] == "low":
+                return False
+            if my["confidence"] == "high" and leader_data["confidence"] == "low":
+                return False
+
+            # Design Choice: We do NOT compare screenshot_hash between validators.
+            # Independent node renders naturally generate byte variations (layout offsets, clocks, dynamic ads).
+            # The leader's screenshot is saved on-chain for verification, while validators focus consensus
+            # purely on semantic and textual outcomes.
+            return True
+
+        result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+        # Record storage mapping will be completed in the next commits.
         return u256(0)
 
     def _compile_prompt(self, url: str, question: str) -> str:
@@ -194,3 +226,29 @@ def _parse_bool(val: typing.Any) -> bool:
             return False
         raise gl.vm.UserError(f"{ERR_PARSING} claim_present must be boolean, got: {val!r}")
     raise gl.vm.UserError(f"{ERR_PARSING} claim_present must be boolean, got type: {type(val).__name__}")
+
+
+def _normalize(text: str) -> str:
+    """Normalizes string inputs to alphanumeric only for robust comparisons."""
+    out = []
+    for char in text.lower():
+        if char.isalnum():
+            out.append(char)
+    return "".join(out)
+
+
+def _compare_errors(leaders_res: gl.vm.Result, redo: typing.Callable[[], dict]) -> bool:
+    """Validator error-path reconciliation logic."""
+    leader_msg = getattr(leaders_res, "message", "") or ""
+    try:
+        redo()
+        return False
+    except gl.vm.UserError as e:
+        my_msg = e.message if hasattr(e, "message") else str(e)
+        if my_msg.startswith(ERR_STANDARD) or my_msg.startswith(ERR_EXTERNAL):
+            return my_msg == leader_msg
+        if my_msg.startswith(ERR_TRANSIENT) and leader_msg.startswith(ERR_TRANSIENT):
+            return True
+        return False
+    except Exception:
+        return False
