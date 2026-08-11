@@ -6,6 +6,13 @@ OpticWitness — robust, decentralized, and spam-protected web content attestati
 Built for the GenLayer protocol, this Intelligent Contract allows users to notarize
 live web states by rendering pages, screenshotting them, and running LLM checks via
 validator consensus.
+
+Key Advancements over standard visual proof architectures:
+1. Cooldown Rate-Limiting: Limits requests to one per 60s per user to mitigate RPC key exhaustion.
+2. Alphanumeric Text Normalization: Compares LLM output semantically by stripping punctuation, 
+   spacing, and casing, preventing splits over minor phrasing variances.
+3. No Byte-Level Screenshot Checks: Avoids comparing dynamic page image hashes, focusing consensus 
+   on structured outcomes, while storing the leader's image on-chain for verification.
 """
 
 from genlayer import *
@@ -17,11 +24,11 @@ import typing
 import datetime
 from dataclasses import dataclass
 
-# Error classification tags
-ERR_STANDARD = "[STANDARD_ERROR]"
-ERR_EXTERNAL = "[EXTERNAL_GATEWAY_ERROR]"
-ERR_TRANSIENT = "[TRANSIENT_NETWORK_ERROR]"
-ERR_PARSING = "[LLM_DECODING_ERROR]"
+# Custom error boundaries for validation isolation
+ERR_STANDARD = "[STANDARD_ERROR]"           # For input checks / ownership violations
+ERR_EXTERNAL = "[EXTERNAL_GATEWAY_ERROR]"    # For target webpage status errors (e.g. 4xx/5xx)
+ERR_TRANSIENT = "[TRANSIENT_NETWORK_ERROR]"  # For network timeouts (triggers rotation)
+ERR_PARSING = "[LLM_DECODING_ERROR]"        # For LLM parsing anomalies / non-JSON responses
 
 
 @allow_storage
@@ -30,8 +37,8 @@ class WitnessRecord:
     requester: Address
     url: str
     question: str
-    verdict: bool             # maps to claim_present
-    extracted_text: str       # semantic textual proof
+    verdict: bool             # maps to claim_present (boolean result)
+    extracted_text: str       # semantic textual proof extracted by the leader
     confidence_score: str     # "high" | "medium" | "low"
     notes: str                # caveats or qualifications
     screenshot_hash: str      # SHA-256 integrity check of leader's capture
@@ -56,7 +63,10 @@ class OpticWitness(gl.Contract):
 
     # --- Helpers -------------------------------------------------------------
     def _now_unix(self) -> int:
-        """Determines current unix epoch time from transactional metadata."""
+        """
+        Determines current unix epoch time from transactional metadata.
+        This provides a secure, clock-drift-free way to govern rate limits.
+        """
         dt_str = gl.message_raw["datetime"]
         if dt_str.endswith("Z"):
             dt_str = dt_str[:-1] + "+00:00"
@@ -101,7 +111,7 @@ class OpticWitness(gl.Contract):
                 f"{ERR_STANDARD} Question cannot be empty"
             )
 
-        # Update last request time
+        # Update last request time to throttle spam
         self.last_request_timestamp[sender] = u256(self._now_unix())
 
         prompt = self._compile_prompt(url, question)
@@ -141,7 +151,7 @@ class OpticWitness(gl.Contract):
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
-        # Deterministic record storage
+        # Deterministic record storage (finalization of consensus)
         record_id = self.total_notarizations
         self.total_notarizations = u256(int(self.total_notarizations) + 1)
 
