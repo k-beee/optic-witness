@@ -106,7 +106,10 @@ class OpticWitness(gl.Contract):
 
         prompt = self._compile_prompt(url, question)
 
-        # Leaders and Validators will be defined in subsequent commits.
+        def leader_fn() -> dict:
+            return _evaluate(url, prompt)
+
+        # Skeletons for validator and settlement will be defined in subsequent commits.
         return u256(0)
 
     def _compile_prompt(self, url: str, question: str) -> str:
@@ -122,3 +125,72 @@ Return a valid JSON string with these fields:
   "confidence": "high" | "medium" | "low",
   "caveats": "any warnings or qualifications"
 }}"""
+
+
+# --- Module-level stateless execution helpers --------------------------------
+def _evaluate(url: str, prompt: str) -> dict:
+    """Renders the webpage, runs visual LLM analysis, and hashes screenshots."""
+    screenshot = gl.nondet.web.render(url, mode="screenshot", wait_after_loaded="1500ms")
+    
+    raw_res = gl.nondet.exec_prompt(prompt, response_format="json", image=screenshot)
+    data = _coerce_json(raw_res)
+    
+    # Store screenshot reference and bytes
+    shot_bytes = bytes(screenshot.raw)
+    shot_hash = hashlib.sha256(shot_bytes).hexdigest()
+    shot_b64 = base64.b64encode(shot_bytes).decode("ascii")
+    
+    # Parse confidence
+    conf = str(data.get("confidence", "low")).strip().lower()
+    if conf not in ("high", "medium", "low"):
+        conf = "low"
+        
+    return {
+        "claim_present": _parse_bool(data.get("claim_present")),
+        "exact_text": str(data.get("exact_text", ""))[:2000],
+        "confidence": conf,
+        "caveats": str(data.get("caveats", ""))[:1000],
+        "screenshot_hash": shot_hash,
+        "screenshot_b64": shot_b64
+    }
+
+
+def _coerce_json(raw: typing.Any) -> dict:
+    """Deals defensively with varied vision model return shapes."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1:
+                return json.loads(raw[start : end + 1])
+        except Exception:
+            pass
+    raise gl.vm.UserError(f"{ERR_PARSING} Vision model output is not a valid JSON structure")
+
+
+_TRUE_VALS = {"true", "yes", "1", "t", "y"}
+_FALSE_VALS = {"false", "no", "0", "f", "n"}
+
+
+def _parse_bool(val: typing.Any) -> bool:
+    """Parses boolean answers strictly to prevent type casting loopholes."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        raise gl.vm.UserError(f"{ERR_PARSING} claim_present is missing from model result")
+    if isinstance(val, int):
+        if val == 0:
+            return False
+        if val == 1:
+            return True
+        raise gl.vm.UserError(f"{ERR_PARSING} claim_present must be boolean, got int: {val}")
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in _TRUE_VALS:
+            return True
+        if v in _FALSE_VALS:
+            return False
+        raise gl.vm.UserError(f"{ERR_PARSING} claim_present must be boolean, got: {val!r}")
+    raise gl.vm.UserError(f"{ERR_PARSING} claim_present must be boolean, got type: {type(val).__name__}")
