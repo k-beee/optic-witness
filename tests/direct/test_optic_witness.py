@@ -61,3 +61,74 @@ def test_withdraw_restricted_to_owner(direct_vm, direct_deploy, direct_bob):
     direct_vm.sender = direct_bob
     with direct_vm.expect_revert("Only the owner"):
         contract.withdraw(_hex_address(direct_bob))
+
+
+# --- Input Validations & Error Handling --------------------------------------
+def test_insufficient_fee_reverts(direct_vm, direct_deploy):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.value = INITIAL_FEE - 1
+    with direct_vm.expect_revert("Insufficient fee"):
+        contract.request_attestation("https://example.com", "Does it show 10M?")
+
+
+def test_invalid_url_protocol_reverts(direct_vm, direct_deploy):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.value = INITIAL_FEE
+    with direct_vm.expect_revert("Invalid URL"):
+        contract.request_attestation("ftp://example.com", "Question?")
+
+
+def test_empty_question_reverts(direct_vm, direct_deploy):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.value = INITIAL_FEE
+    with direct_vm.expect_revert("Question cannot be empty"):
+        contract.request_attestation("https://example.com", "")
+
+
+def test_non_existent_record_id_reverts(direct_vm, direct_deploy):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    with direct_vm.expect_revert("Non-existent record ID"):
+        contract.get_record(99)
+
+
+# --- Strict Boolean Parsing --------------------------------------------------
+def test_strict_boolean_string_parsing(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(
+        direct_vm,
+        llm_json=json.dumps(
+            {
+                "claim_present": "no",
+                "exact_text": "",
+                "confidence": "medium",
+                "caveats": "",
+            }
+        ),
+    )
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    rid = contract.request_attestation("https://example.com", "Does it show 10M?")
+    rec = contract.get_record(rid)
+    assert rec["verdict"] is False
+
+
+def test_malformed_boolean_reverts(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(
+        direct_vm,
+        llm_json=json.dumps(
+            {
+                "claim_present": "unclear",
+                "exact_text": "",
+                "confidence": "medium",
+                "caveats": "",
+            }
+        ),
+    )
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    with direct_vm.expect_revert("claim_present must be boolean"):
+        contract.request_attestation("https://example.com", "Does it show 10M?")
