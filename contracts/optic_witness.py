@@ -141,8 +141,107 @@ class OpticWitness(gl.Contract):
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
-        # Record storage mapping will be completed in the next commits.
-        return u256(0)
+        # Deterministic record storage
+        record_id = self.total_notarizations
+        self.total_notarizations = u256(int(self.total_notarizations) + 1)
+
+        record = WitnessRecord(
+            requester=sender,
+            url=url,
+            question=question,
+            verdict=bool(result["claim_present"]),
+            extracted_text=str(result.get("exact_text", "")),
+            confidence_score=str(result.get("confidence", "low")),
+            notes=str(result.get("caveats", "")),
+            screenshot_hash=str(result.get("screenshot_hash", "")),
+            screenshot_b64=str(result.get("screenshot_b64", "")),
+            timestamp=self._now_iso(),
+            completed=True,
+        )
+
+        self.records[record_id] = record
+        self.requester_index.get_or_insert_default(sender).append(record_id)
+
+        return record_id
+
+    @gl.public.write
+    def update_fee(self, new_fee: u256) -> None:
+        """Updates the registration fee for new attestation requests. Owner only."""
+        if gl.message.sender_address != self.owner_address:
+            raise gl.vm.UserError(f"{ERR_STANDARD} Only the owner may alter fees")
+        self.attestation_fee = new_fee
+
+    @gl.public.write
+    def withdraw(self, target_address: str) -> None:
+        """Withdraws all contract balances to a target address. Owner only."""
+        if gl.message.sender_address != self.owner_address:
+            raise gl.vm.UserError(f"{ERR_STANDARD} Only the owner may withdraw balances")
+        balance_to_transfer = self.balance
+        if balance_to_transfer == 0:
+            raise gl.vm.UserError(f"{ERR_STANDARD} Contract balance is empty")
+        gl.chain.Account(Address(target_address)).emit_transfer(value=u256(int(balance_to_transfer)))
+
+    # --- View/Read methods ---------------------------------------------------
+    @gl.public.view
+    def get_attestation_fee(self) -> str:
+        """Gets current attestation fee in Wei."""
+        return str(self.attestation_fee)
+
+    @gl.public.view
+    def get_owner_address(self) -> str:
+        """Gets the hex address of the owner."""
+        return self.owner_address.as_hex
+
+    @gl.public.view
+    def get_total_notarizations(self) -> str:
+        """Gets the total number of notarized records."""
+        return str(self.total_notarizations)
+
+    @gl.public.view
+    def get_record(self, record_id: u256) -> dict:
+        """Retrieves a single attestation record by ID."""
+        if record_id not in self.records:
+            raise gl.vm.UserError(f"{ERR_STANDARD} Non-existent record ID")
+        return self._serialize(record_id, self.records[record_id])
+
+    @gl.public.view
+    def get_records_by_requester(self, requester_hex: str) -> dict:
+        """Retrieves all attestation records requested by a specific address."""
+        addr = Address(requester_hex)
+        out = []
+        if addr in self.requester_index:
+            for rid in self.requester_index[addr]:
+                out.append(self._serialize(rid, self.records[rid]))
+        return {"requester": addr.as_hex, "records": out}
+
+    @gl.public.view
+    def get_recent_records(self, count: u256) -> dict:
+        """Retrieves most recent records descending up to count."""
+        total = int(self.total_notarizations)
+        limit = min(int(count), total)
+        out = []
+        i = total - 1
+        while i >= 0 and len(out) < limit:
+            out.append(self._serialize(u256(i), self.records[u256(i)]))
+            i -= 1
+        return {"total": str(total), "records": out}
+
+    # --- Internal Serialization ----------------------------------------------
+    def _serialize(self, record_id: u256, r: WitnessRecord) -> dict:
+        return {
+            "id": str(record_id),
+            "requester": r.requester.as_hex,
+            "url": r.url,
+            "question": r.question,
+            "verdict": r.verdict,
+            "extracted_text": r.extracted_text,
+            "confidence_score": r.confidence_score,
+            "notes": r.notes,
+            "screenshot_hash": r.screenshot_hash,
+            "screenshot_b64": r.screenshot_b64,
+            "timestamp": r.timestamp,
+            "completed": r.completed,
+        }
 
     def _compile_prompt(self, url: str, question: str) -> str:
         """Compiles the system prompt for the vision model."""
