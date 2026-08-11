@@ -235,3 +235,24 @@ def test_validator_agrees_on_text_formatting_variance(direct_vm, direct_deploy, 
         ),
     )
     assert direct_vm.run_validator() is True
+
+
+# --- Rate Limiting Safeguards ------------------------------------------------
+def test_cooldown_enforcement(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT_PATH, INITIAL_FEE, sdk_version="v0.2.1")
+    _setup_mocks(direct_vm)
+    direct_vm.sender = direct_alice
+    direct_vm.value = INITIAL_FEE
+    
+    # 1st request at 16:00:00
+    direct_vm.message_raw = {"datetime": "2026-08-11T16:00:00Z"}
+    contract.request_attestation("https://example.com", "Question?")
+    
+    # 2nd request at 16:00:30 (should revert due to 60s cooldown)
+    direct_vm.message_raw = {"datetime": "2026-08-11T16:00:30Z"}
+    with direct_vm.expect_revert("Cooldown active"):
+        contract.request_attestation("https://example.com", "Question?")
+        
+    # 3rd request at 16:01:05 (should succeed because it is > 60s later)
+    direct_vm.message_raw = {"datetime": "2026-08-11T16:01:05Z"}
+    contract.request_attestation("https://example.com", "Question?")
