@@ -1,25 +1,21 @@
 import { createClient } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
 import type { GenLayerClient } from "genlayer-js/types";
 
-// Custom chain definition for StudioNet
+// Custom chain definition for StudioNet extending the official studionet chain definition
 export const studioNet = {
-  id: 61999,
-  name: "GenLayer StudioNet",
-  nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+  ...studionet,
   rpcUrls: {
     default: { http: ["https://studio.genlayer.com/api"] },
     public: { http: ["https://studio.genlayer.com/api"] },
   },
-  blockExplorers: {
-    default: { name: "GenLayer Explorer", url: "https://studio.genlayer.com" },
-  },
-} as any;
+} as typeof studionet;
 
-let readClientInstance: GenLayerClient<any> | null = null;
+let readClientInstance: GenLayerClient<typeof studionet> | null = null;
 
-export function getReadClient(): GenLayerClient<any> {
+export function getReadClient(): GenLayerClient<typeof studionet> {
   if (!readClientInstance) {
-    readClientInstance = createClient({ chain: studioNet }) as unknown as GenLayerClient<any>;
+    readClientInstance = createClient({ chain: studioNet }) as unknown as GenLayerClient<typeof studionet>;
   }
   return readClientInstance;
 }
@@ -69,7 +65,7 @@ interface Eip1193Provider {
 export async function getWriteClient(
   address: `0x${string}`,
   provider: unknown,
-): Promise<GenLayerClient<any>> {
+): Promise<GenLayerClient<typeof studionet>> {
   const eip = provider as Eip1193Provider;
   await ensureStudioNet(eip);
   const client = createClient({
@@ -77,5 +73,5 @@ export async function getWriteClient(
     account: address,
     provider: provider as never,
   });
-  return client as unknown as GenLayerClient<any>;
+  return client as unknown as GenLayerClient<typeof studionet>;
 }
