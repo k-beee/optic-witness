@@ -106,14 +106,6 @@ export default function App() {
             </button>
             
             {isPrivyEnabled && <WalletButton />}
-
-            <span className="nav-divider" />
-            <a href={REPOSITORY_LINK} target="_blank" rel="noreferrer" className="nav-icon-link" aria-label="GitHub Repository">
-              <IconTerminal />
-            </a>
-            <a href={TWITTER_LINK} target="_blank" rel="noreferrer" className="nav-icon-link" aria-label="X Profile">
-              <IconGlobe />
-            </a>
           </div>
         </div>
       </nav>
@@ -192,7 +184,7 @@ export default function App() {
           />
           <MetricStatCard
             title="Network Target"
-            textValue="StudioNet (61999)"
+            textValue="StudioNet"
             caption="30 req/min RPC limit active"
             visualIcon={<IconGlobe />}
             cardIndex={3}
@@ -244,7 +236,7 @@ export default function App() {
       <footer className="footer-bar">
         <div className="footer-inner">
           <div className="footer-left-content">
-            OpticWitness · GenLayer StudioNet (61999)
+            OpticWitness · GenLayer StudioNet
             {isContractConfigured && (
               <>
                 {" "}·{" "}
